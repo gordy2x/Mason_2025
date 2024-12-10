@@ -1,0 +1,171 @@
+---
+title: "Monitoring Phytophthora cinnamomi disease incidence"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+```{r message=FALSE, warning=FALSE}
+library(ggmap)
+library(tidyverse)
+library(ggplot2)
+library(readr)
+library(glmmTMB)
+library(DHARMa)
+library(pROC)
+library(emmeans)
+library(lme4)
+library(car)
+library(wesanderson)
+set.seed(22052024)
+```
+
+
+## Data
+
+- we combine years 2006-2008, and hereafter these are grouped as 2008
+- we combine landforms as follows 
+
+ i. ridgetops
+ ii. upper and mid-slopes, 
+ iii. lower-slopes and in-filled valleys and 
+ iv. rises or long gentle foot slopes and alluvial deposits
+
+For analysis stability, we scale distance to road and watercourse. We unscaled variables later for interpretation. 
+
+We remove one site with unknown vegetation type. 
+
+Please copy data from XX into data folder. 
+
+
+```{r}
+datadir <- "../data"
+
+df_phyto <- read.csv(file.path(datadir,"Sthern_Syd_Pc_compl_updated5.csv"), strip.white = TRUE,
+                     na.strings = c("", "NA")) %>% 
+  mutate(Test = ifelse(PC_present %in% c( "Positive", "positive"), 1, 0),
+         Year = ifelse(Year%in% c(2006, 2007), 2008, Year), 
+         Year = factor(Year)) 
+
+
+df_phyto_clean <- df_phyto %>% 
+  transmute(Code = factor(Code), 
+         Year,
+         Test,
+         Scivi_combined_updated = factor(Scivi_combined_updated),
+         Landform_ordinal_cat = case_when(Landform_ordinal %in% c(1)~ "1",
+                                          Landform_ordinal %in% c(2,3)~ "2-3",
+                                          Landform_ordinal %in% c(4,5)~ "4-5",
+                                          Landform_ordinal %in% c(6,7)~ "6-7"),
+         Landform_ordinal = factor(Landform_ordinal), 
+         s_DISTROAD_cs = (DISTROAD_cs - 200)/300,
+         s_DISTHYDRO_cs = (DISTHYDRO_cs  - 100)/200,
+         Longitude, Latitude,
+         Location = substr(Collection_area,1,8)) %>% 
+  filter(!is.na(Scivi_combined_updated))
+
+#for model with spatial random effect
+df_phyto_clean$pos <- numFactor(df_phyto_clean$Longitude, df_phyto_clean$Latitude)
+```
+
+Correlation matrix
+```{r}
+df_phyto_clean %>% 
+  select(s_DISTROAD_cs, s_DISTHYDRO_cs) %>% 
+  cor()
+```
+
+## Models
+
+```{r}
+phyto_mod_nonspatial <- glmmTMB(Test ~ s_DISTROAD_cs + s_DISTHYDRO_cs +
+                                  Location + Year  + Landform_ordinal_cat +
+                                  (1|Scivi_combined_updated) + (1 | Code) ,
+                                  data = df_phyto_clean,
+                                family = binomial,
+                                control = glmmTMBControl(rank_check = "adjust"))
+
+phyto_mod_spatial <- update(phyto_mod_nonspatial, .~. + exp(pos + 0 | Year))
+
+```
+
+We do not include an interaction for year and location as only one location (Dharawal Reserves) was sampled in multiple years. 
+
+
+```{r}
+AIC(phyto_mod_spatial, phyto_mod_nonspatial)
+```
+
+The spatial model has better (smaller) AIC, so this is our primary model.
+
+
+## Inference
+
+### Model with the spatial random effect
+
+```{r}
+drop1(phyto_mod_spatial, test="Chisq") # type 2 anova
+```
+
+
+```{r}
+emmeans(phyto_mod_spatial, ~ Year | Location, type = "response")
+```
+
+### Sensitivity analysis, removing the spatially structured random effect
+
+```{r}
+drop1(phyto_mod_nonspatial, test="Chisq")# type 2 anova
+```
+
+Rescale odds ratio for distance to watercourse to per 100m for easier interpretation
+
+```{r}
+1/exp(confint(phyto_mod_nonspatial, parm = c("s_DISTHYDRO_cs"))/200*100)
+```
+For each 100 metres closer to a watercourse, the odds of P.cinnamomi increase by 19% (95% CI: 2%-39%, p = 0.010)
+
+
+### Plot
+
+
+```{r}
+pos = position_dodge(width=0.3)
+
+em_spatial <- emmip(phyto_mod_spatial, ~ Year | Location, CIs = TRUE, type = "response", 
+                       plotit = FALSE) %>% 
+  mutate(model = "spatial")
+
+plot_phyt3 <- em_spatial %>% 
+  filter(!(Year!=2008  & Location != "Dharawal")) %>%
+  ggplot(aes(Year, yvar, color = Location)) +
+  geom_point(position = pos, size = 2) + 
+  geom_path(position = pos , size = 1) +
+  geom_errorbar(aes(ymin = LCL, ymax = UCL),
+                position = pos,
+                alpha = 0.5, width = 0, size = 2) + 
+  guides(fill=guide_legend(title=NULL))+
+  ylim(0,1)+
+ theme(axis.text = element_text(size = 12))+
+  theme(axis.title = element_text(size = 14))+
+  theme(plot.title = element_text(size = 14))+
+  theme(strip.text = element_text(size = 14))+
+  theme(legend.text = element_text(size = 12))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  #theme(legend.position = "none") +
+  theme(legend.position = "bottom", legend.key = element_rect(fill = NA))+
+  
+  theme(plot.margin = unit(c(0.2,2,0.2,0.2), "cm"))+
+  theme(legend.title = element_blank())+
+    ylab(expression(atop(paste("Probability of ",italic("Phytophthora cinnamomi")), paste(" infection (+/-95% CI)"))))+
+  scale_fill_discrete(labels=c('Dharawal parks', 'Georges River/ Botany Bay parks', 'Royal / Heathcote / Garawarra parks'))+
+  #scale_color_manual(values  = wes_palette(n=3, name="Moonrise2"))
+  scale_color_manual(labels = c('Dharawal', 'Georges River/ Kamay Botany Bay', 'Royal / Heathcote / Garawarra'), values  = c("darkgoldenrod4", "darkgoldenrod2", "gold"))
+plot_phyt3
+#ggsave(plot = plot_phyt3, file = "../plots/phyt_plotTM9_updated.tiff" , width = 180, height = 150, units = "mm", device = "tiff")
+```
+
+
+

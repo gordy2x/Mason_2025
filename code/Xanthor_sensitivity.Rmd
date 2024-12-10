@@ -1,0 +1,113 @@
+---
+title: "Inconsistent pathogen detection and the role of sentinel species"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+
+```{r message=FALSE, warning=FALSE}
+library(ggmap)
+library(tidyverse)
+library(ggplot2)
+library(readr)
+library(glmmTMB)
+library(DHARMa)
+library(pROC)
+library(emmeans)
+library(lme4)
+```
+
+
+
+## Data
+
+Please copy data from XX into data folder. 
+
+
+```{r}
+datadir <- "../data"
+
+df_phyto <- read.csv(file.path(datadir,"Sthern_Syd_Pc_compl_updated5.csv"), strip.white = TRUE) %>% 
+   filter(Site_severity != "NA") %>% 
+  #filter(Year!="2022") %>%
+  mutate(Test = ifelse(Phyto_genus_present %in% c( "Positive", "positive"), 1, 0),
+         Year = ifelse(Year == 2007, 2008, Year),
+         Year = factor(Year)) 
+
+```
+
+## Visual assessment - full dataset
+
+This assumes a cut-off of 1 (i.e. 0 vs 1,2 or 3) for Site_severity
+
+```{r}
+df_phyto %>% 
+  mutate(Field = ifelse(Site_severity == 0, 0, 1)) %>% # make site severity binary
+  select(Test, Field) %>%
+  table() %>% 
+  prop.table(margin = 1)
+```
+
+Visual field assessment and laboratory assays have inconsistent detections when using the full dataset. 
+
+```{r}
+pROC_obj <- roc(df_phyto$Test,
+                df_phyto$Site_severity,
+            # arguments for ci
+            ci=TRUE,
+            # arguments for plot
+            plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+            print.auc=TRUE)
+```
+
+
+##Visual assessment - Xanthorrhoea as sentinel species
+
+Only include data where Xanthorrhoea was present and run the analysis again (cut down dataset below).
+
+
+
+```{r}
+datadir <- "../data"
+
+
+
+df_phyto_xanth <- read.csv(file.path(datadir,"Sthern_Syd_Pc_compl_updated5_xanthorr.csv"), strip.white = TRUE) %>%
+filter(Site_severity != "NA") %>% 
+  #filter(Year!="2022") %>%
+  mutate(Test = ifelse(Phyto_genus_present %in% c( "Positive", "positive"), 1, 0),
+         Year = ifelse(Year == 2007, 2008, Year),
+         Year = factor(Year))
+```
+
+
+This assumes a cut-off of 1 (i.e. 0 vs 1,2 or 3) for Site_severity
+
+```{r}
+df_phyto_xanth %>% 
+  mutate(Field = ifelse(Site_severity == 0, 0, 1)) %>% # make site severity binary
+  select(Test, Field) %>%
+  table() %>% 
+  prop.table(margin = 1)
+```
+
+
+Visual field assessment is more consistent with laboratory assay when Xanthorrhoea is a community component. 
+
+
+```{r}
+pROC_obj <- roc(df_phyto_xanth$Test,
+                df_phyto_xanth$Site_severity,
+            # arguments for ci
+            ci=TRUE,
+            # arguments for plot
+            plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+            print.auc=TRUE)
+```
+
+
+
+
+
