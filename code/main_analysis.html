@@ -1653,6 +1653,8 @@ set.seed(22052024)</code></pre>
 <p>For analysis stability, we scale distance to road and watercourse. We
 unscaled variables later for interpretation.</p>
 <p>We remove one site with unknown vegetation type.</p>
+<p>Please copy Sthern_Syd_Pc_compl_updated5.csv from <a href="https://doi.org/10.5281/zenodo.14399365" class="uri">https://doi.org/10.5281/zenodo.14399365</a> into data
+folder.</p>
 <pre class="r"><code>datadir &lt;- &quot;../data&quot;
 
 df_phyto &lt;- read.csv(file.path(datadir,&quot;Sthern_Syd_Pc_compl_updated5.csv&quot;), strip.white = TRUE,

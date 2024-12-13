@@ -36,7 +36,7 @@ For analysis stability, we scale distance to road and watercourse. We unscaled v
 
 We remove one site with unknown vegetation type. 
 
-Please copy data from XX into data folder. 
+Please copy Sthern_Syd_Pc_compl_updated5.csv from https://doi.org/10.5281/zenodo.14399365 into data folder. 
 
 
 ```{r}
